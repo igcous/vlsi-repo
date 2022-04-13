@@ -2,7 +2,7 @@
 
 import spi_pkg::*;
 
-module spi_slave_v1 (
+module spi_slave (
 	input  logic [1:0] driver_cfg, // not SPI, for mode config testing
 	input  logic       sck       ,
 	input  logic       mosi      ,
@@ -148,7 +148,6 @@ module spi_slave_v1 (
 		rx_data_flag = 1'b0;
 		wait_flag    = 1'b0;
 		tx_flag      = 1'b0;
-		out_enable   = 1'b0;
 		write_mem    = 1'b0;
 		case (state)
 			IDLE : begin
@@ -169,7 +168,7 @@ module spi_slave_v1 (
 				rx_data_flag = 1'b1;
 				if (rx_data_done) begin
 					write_mem = 1'b1;
-					next      = IDLE;
+					next      = RX_CONTROL;
 				end
 			end
 			WAIT : begin
@@ -181,9 +180,8 @@ module spi_slave_v1 (
 			TX : begin
 				tx_flag = 1'b1;
 				if (tx_done) begin
-					next = IDLE;
+					next = RX_CONTROL;
 				end
-				out_enable = 1'b1;
 			end
 		endcase // state
 	end
@@ -192,17 +190,17 @@ module spi_slave_v1 (
 // Master-Slave sequential logic
 ////////////////////////////////////////////////////////////////////////
 
-	always_ff @(posedge sck or negedge ss_n) begin
-		if (~ss_n) begin
+	always_ff @(posedge s_cnt or posedge c_cnt or posedge ss_n) begin
+		if (ss_n) begin
+			state <= RX_CONTROL;
+		end else if (sample_flag) begin
 			state <= next;
-		end else begin
-			state <= IDLE;
 		end
 	end
 
 	// TX, wait and RX counter operation (count should go up along with sampling)
 	always_ff @(posedge s_cnt or posedge c_cnt or posedge ss_n) begin
-		if (idle_flag) begin
+		if (ss_n) begin
 			rx_ctrl_cnt <= '0;
 			rx_data_cnt <= '0;
 			wait_cnt    <= '0;
@@ -233,7 +231,7 @@ module spi_slave_v1 (
 				tx_shift_reg <= (tx_shift_reg<<1);
 			end
 			if (((rx_ctrl_flag)||(rx_data_flag))&&((~rx_ctrl_done)||(~rx_data_done))) begin
-			//if ((rx_ctrl_flag)||(rx_data_flag)) begin	
+				//if ((rx_ctrl_flag)||(rx_data_flag)) begin
 				rx_shift_reg <= (rx_shift_reg>>1);
 			end
 		end
@@ -245,7 +243,7 @@ module spi_slave_v1 (
 		if (sample_flag) begin
 			//if (((rx_ctrl_flag&&(rx_ctrl_cnt!='0)))||(rx_data_flag)) begin
 			if ((rx_ctrl_flag)||(rx_data_flag)) begin
-				rx_shift_reg[$high(rx_shift_reg)] <= mosi; // Fixed mosi, for reading debug
+				rx_shift_reg[$high(rx_shift_reg)] <= mosi;
 			end
 		end
 
@@ -308,9 +306,10 @@ module spi_slave_v1 (
 // Debug stuff
 ////////////////////////////////////////////////////////////////////////
 
-	assign bit_in  = rx_shift_reg[$high(rx_shift_reg)];
-	assign bit_out = tx_shift_reg[$high(tx_shift_reg)];
-	assign miso    = out_enable ? bit_out : 'z;
+	assign bit_in     = rx_shift_reg[$high(rx_shift_reg)];
+	assign bit_out    = tx_shift_reg[$high(tx_shift_reg)];
+	assign out_enable = tx_flag;
+	assign miso       = out_enable ? bit_out : 'z;
 
 
-endmodule : spi_slave_v1
+endmodule : spi_slave

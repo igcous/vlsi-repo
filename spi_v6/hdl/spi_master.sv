@@ -2,7 +2,7 @@
 
 import spi_pkg::*;
 
-module spi_master_v2 (
+module spi_master (
 	// Driver-Master
 	input  logic                         clk         ,
 	input  logic                         rst_n       ,
@@ -78,7 +78,7 @@ module spi_master_v2 (
 // Driver-Master combinational logic
 ////////////////////////////////////////////////////////////////////////
 
-	assign write   = driver_data[0];
+	assign write = driver_data[0];
 	//assign write   = 1'b1;
 	assign size    = driver_data[2:1];
 	assign ss_addr = driver_data[DWIDTH+AWIDTH+3+2-1:DWIDTH+AWIDTH+3];
@@ -89,12 +89,14 @@ module spi_master_v2 (
 	// Deco, slave select from instruction
 	always_comb begin
 		ss_n = 4'b1111;
-		case (ss_addr)
-			2'b00 : ss_n = 4'b1110;
-			2'b01 : ss_n = 4'b1101;
-			2'b10 : ss_n = 4'b1011;
-			2'b11 : ss_n = 4'b0111;
-		endcase
+		if (~load_flag) begin
+			case (ss_addr)
+				2'b00 : ss_n = 4'b1110;
+				2'b01 : ss_n = 4'b1101;
+				2'b10 : ss_n = 4'b1011;
+				2'b11 : ss_n = 4'b0111;
+			endcase
+		end
 	end
 
 	assign driver_read = req_flag;
@@ -117,9 +119,9 @@ module spi_master_v2 (
 	// TX and RX bits according to instruction write and size
 	always_comb begin
 		case (size)
-			2'b00   : data_size = 8;
-			2'b01   : data_size = 16;
-			2'b10   : data_size = 32;
+			2'b00 : data_size = 8;
+			2'b01 : data_size = 16;
+			2'b10 : data_size = 32;
 			//2'b11 : $error("SIZE ASSIGNMENT ERROR (MASTER).");
 		endcase
 		if (~write) begin
@@ -137,6 +139,9 @@ module spi_master_v2 (
 	// Note: wait_nbits = wait cycles for slave to have data available in read transfer,
 	// assumed known for both slave and master
 
+	// Output enable
+	assign out_enable = ((tx_flag)||(wait_flag)||(rx_flag));
+
 	// TX, wait and RX done flags
 	assign tx_done   = (tx_cnt==(tx_nbits));
 	assign wait_done = (wait_cnt==(wait_nbits));
@@ -144,24 +149,24 @@ module spi_master_v2 (
 
 	// State Machine
 	always_comb begin
-		req_flag   = 1'b0;
-		load_flag  = 1'b0;
-		tx_flag    = 1'b0;
-		wait_flag  = 1'b0;
-		rx_flag    = 1'b0;
-		out_enable = 1'b0;
+		req_flag  = 1'b0;
+		load_flag = 1'b0;
+		tx_flag   = 1'b0;
+		wait_flag = 1'b0;
+		rx_flag   = 1'b0;
 		case (state)
 			RESET : begin
+				next     = LOAD;
+			end
+			REQUEST: begin
 				req_flag = 1'b1;
 				next = LOAD;
-			end
 			LOAD : begin
 				load_flag = 1'b1;
 				next      = TX;
 			end
 			TX : begin
 				tx_flag = 1'b1;
-				out_enable = 1'b1;
 				if (tx_done) begin
 					if (write) begin
 						req_flag = 1'b1;
@@ -169,18 +174,16 @@ module spi_master_v2 (
 					end else begin
 						next = WAIT;
 					end
-				end			
+				end
 			end
 			WAIT : begin
 				wait_flag = 1'b1;
-				out_enable = 1'b1;
 				if (wait_done) begin
 					next = RX;
-				end	
+				end
 			end
 			RX : begin
 				rx_flag = 1'b1;
-				out_enable = 1'b1;
 				if (rx_done) begin
 					req_flag = 1'b1;
 					next = LOAD;
@@ -279,4 +282,4 @@ module spi_master_v2 (
 	assign bit_out = tx_shift_reg[$low(tx_shift_reg)];
 	assign mosi    = out_enable ? bit_out : 'z;
 
-endmodule // spi_master_v2
+endmodule // spi_master
