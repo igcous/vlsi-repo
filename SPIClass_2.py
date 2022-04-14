@@ -2,7 +2,7 @@ import random
 
 class SPIClass(object):
 	def __init__(self,
-		outfile = 'C:/Users/AK124602/Documents/vlsi-repo/new_spi_v6/python/in_instr.mem'
+		outfile = 'C:/Users/AK124602/Documents/vlsi-repo/new_spi_v7/python/in_instr_2.mem'
 		):
 		self.outfile = outfile
 
@@ -39,8 +39,9 @@ class SPIClass(object):
 			raise('byte, half word, or word are only valid transfer sizes')
 
 		for addr in range(num_address):
-			data = random.randint(0, max_data)
-			data = 15
+			#data = random.randint(0, max_data)
+			#data = 15
+			data = addr
 			self.write_instr(fp,addr*addr_mult+start_address,data,size,'write',ss)
 
 	def burst_read(self,fp,start_address,num_address,size,ss):
@@ -64,9 +65,11 @@ def main():
 	print("Write dummy data to ./in.mem")
 	with open(spi_1.outfile, 'w') as outfile:
 		slave_select = 0
-		spi_1.burst_write(outfile,3,1,'byte',slave_select)
-		spi_1.burst_read(outfile,3,1,'byte', slave_select)
-		#spi_1.burst_write(outfile,6,1,'byte',slave_select)
+		# spi_1.burst_write(outfile,3,1,'byte',slave_select)
+		# spi_1.burst_read(outfile,3,1,'byte', slave_select)
+		# #spi_1.burst_write(outfile,6,1,'byte',slave_select)
+		spi_1.burst_write(outfile, 0, 16, 'word', slave_select)
+		spi_1.burst_read(outfile, 0, 16, 'word', slave_select)
 
 if __name__ == '__main__':
 	main()
