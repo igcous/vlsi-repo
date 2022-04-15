@@ -45,7 +45,7 @@ module tb_spi ();
 		.ss_n        (ss_n_slave  )
 	);
 
-	spi_slave u_spi_slave (
+	spi_slave u_spi_slave_0 (
 		.driver_cfg(driver_cfg   ),
 		.sck       (sck          ),
 		.mosi      (mosi         ),
@@ -53,4 +53,28 @@ module tb_spi ();
 		.ss_n      (ss_n_slave[0])
 	);
 
+	spi_slave u_spi_slave_1 (
+		.driver_cfg(driver_cfg   ),
+		.sck       (sck          ),
+		.mosi      (mosi         ),
+		.miso      (miso         ),
+		.ss_n      (ss_n_slave[1])
+	);
+
+	spi_slave u_spi_slave_2 (
+		.driver_cfg(driver_cfg   ),
+		.sck       (sck          ),
+		.mosi      (mosi         ),
+		.miso      (miso         ),
+		.ss_n      (ss_n_slave[2])
+	);
+
+	spi_slave u_spi_slave_3 (
+		.driver_cfg(driver_cfg   ),
+		.sck       (sck          ),
+		.mosi      (mosi         ),
+		.miso      (miso         ),
+		.ss_n      (ss_n_slave[3])
+	);
+	
 endmodule // tb_spi

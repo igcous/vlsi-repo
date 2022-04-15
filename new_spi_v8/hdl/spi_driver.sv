@@ -44,7 +44,7 @@ module spi_driver (
 			infileptr = $fopen(input_filepath,"r");
 			$display("Sending instructions to SPI Master...");
 
-			#(TCLK/10) master_en = 1;
+			#(TCLK/10) master_en = 1'b1;
 
 			while (!$feof(infileptr)) begin
 
@@ -83,9 +83,9 @@ module spi_driver (
 		end
 	endtask
 
-	initial begin
-		outfileptr = $fopen(output_filepath,"w");
-	end
+	// initial begin
+	// 	outfileptr = $fopen(output_filepath,"w");
+	// end
 
 	always_ff @(posedge clk) begin
 		if (driver_read) begin
@@ -93,7 +93,6 @@ module spi_driver (
 		end
 	end
 
-	assign is_write  = driver_data[$high(driver_data)-S_ADDR_WIDTH];
 	assign was_write = driver_data_1[$high(driver_data_1)-S_ADDR_WIDTH];
 
 	always_ff @(posedge clk) begin
@@ -101,8 +100,8 @@ module spi_driver (
 			//$fwrite(outfileptr,"Data: %b\n", spi_slv_read_data);
 			$display("INSTRUCTION CTRL: SS = %b ", driver_data_1[$high(driver_data_1)-:S_ADDR_WIDTH],
 				"WR_EN = %b ", driver_data_1[$high(driver_data_1)-S_ADDR_WIDTH],
-				"SIZE  = %b ", driver_data_1[$high(driver_data_1)-S_ADDR_WIDTH-1-:2],
-				"ADDR  = %b ", driver_data_1[DWIDTH+:AWIDTH],
+				"SIZE = %b ", driver_data_1[$high(driver_data_1)-S_ADDR_WIDTH-1-:2],
+				"ADDR = %b ", driver_data_1[DWIDTH+:AWIDTH],
 				"RDATA = %b ", spi_slv_read_data);
 		end
 	end
