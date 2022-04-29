@@ -89,7 +89,7 @@ module fir (
 	// Output
 	///////////////////////////////////////////////////////////////////
 
-	assign out_wave = sum[OUT_SIZE-1];
+	assign out_wave = sum[TAPS-1];
 
 	// Visualization
 
