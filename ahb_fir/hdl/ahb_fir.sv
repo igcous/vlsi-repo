@@ -68,7 +68,7 @@ module ahb_fir (
 		if ((htrans_1[1])&&(hwrite_1)&&(hsel_1)) begin
 			in_wave = hwdata[BIT_PREC-1:0];
 		end else begin
-			in_wave = {BIT_PREC{1'b0}};
+			in_wave = '0;
 		end
 	end
 

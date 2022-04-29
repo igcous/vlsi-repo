@@ -48,9 +48,8 @@ module ahb_fifo #(
 	logic              empty_flg                                 ;
 	logic              full_flg                                  ;
 	logic [DWIDTH-1:0] wdata                                     ;
-	logic              write_en                                  ;
 	logic              read_en                                   ;
-	logic [DWIDTH-1:0] mem_out;
+	logic [DWIDTH-1:0] mem_out                                   ;
 
 	// AHB
 	logic                        hsel_1  ;
@@ -82,12 +81,16 @@ module ahb_fifo #(
 
 	assign hreadyout = 1'b1;
 	assign hresp     = 1'b0;
-	assign mem_out = mem[rptr[AWIDTH-1:0]];
+	assign mem_out   = mem[rptr[AWIDTH-1:0]];
 
 	// AHB Read
 	always_comb begin
-		hrdata = {empty_flg,mem_out[DWIDTH-2:0]};
-		// Note: First bit indicates if the read data is valid (i.e. if this bit is 1, data was read from an empty fifo = data invalid)
+		if ((htrans_1[1])&&(~hwrite_1)&&(hsel_1)) begin
+			hrdata = {empty_flg,mem_out[DWIDTH-2:0]};
+			// Note: First bit indicates if the read data is valid (i.e. if this bit is 1, data was read from an empty fifo = data invalid)
+		end else begin
+			hrdata = '0;
+		end
 	end
 
 	// // AHB Read

@@ -33,7 +33,9 @@ module tb_ahb_fir ();
 	logic [OUT_SIZE-1:0] out_wave          ; // FIR-FIFO
 
 	generate
-		for (genvar ii=3;ii<SWIDTH;ii++) begin
+		assign hreadyout_slv_n[0] = 1'b1; // Slave 0 = No slave selected
+		assign hresp_slv_n[0] = 1'b0;
+		for (genvar ii=4;ii<SWIDTH;ii++) begin
 			assign hreadyout_slv_n[ii] = 1'b1;
 			assign hresp_slv_n[ii]     = 1'b0;
 		end
@@ -84,29 +86,8 @@ module tb_ahb_fir ();
 		.hready         (hready         )
 	);
 
-	// Slave 0: FIR
+	// Slave 1: FIR
 	ahb_fir u_ahb_fir (
-		.clk      (clk               ),
-		.rst_n    (rst_n             ),
-		.hready   (hready            ),
-		.haddr    (haddr             ),
-		.hwrite   (hwrite            ),
-		.hsize    (hsize             ),
-		.htrans   (htrans            ),
-		.hwdata   (hwdata            ),
-		.hsel     (sel_slv[0]        ),
-		.hrdata   (hrdata_slv_n[0]   ),
-		.hreadyout(hreadyout_slv_n[0]),
-		.hresp    (hresp_slv_n[0]    ),
-		// mem-FIR
-		.fircoefs (fircoefs          ),
-		// FIR-FIFO
-		.out_wave (out_wave          ),
-		.write_en (write_en          )
-	);
-
-	// Slave 1: FIFO
-	ahb_fifo #(.MEM_SIZE(1024), .DWIDTH(32)) u_ahb_fifo (
 		.clk      (clk               ),
 		.rst_n    (rst_n             ),
 		.hready   (hready            ),
@@ -119,13 +100,15 @@ module tb_ahb_fir ();
 		.hrdata   (hrdata_slv_n[1]   ),
 		.hreadyout(hreadyout_slv_n[1]),
 		.hresp    (hresp_slv_n[1]    ),
+		// mem-FIR
+		.fircoefs (fircoefs          ),
 		// FIR-FIFO
 		.out_wave (out_wave          ),
 		.write_en (write_en          )
 	);
 
-	// Slave 2: Memory
-	ahb_mem #(.MEM_BYTE(1024)) u_ahb_mem (
+	// Slave 2: FIFO
+	ahb_fifo #(.MEM_SIZE(1024), .DWIDTH(32)) u_ahb_fifo (
 		.clk      (clk               ),
 		.rst_n    (rst_n             ),
 		.hready   (hready            ),
@@ -138,6 +121,25 @@ module tb_ahb_fir ();
 		.hrdata   (hrdata_slv_n[2]   ),
 		.hreadyout(hreadyout_slv_n[2]),
 		.hresp    (hresp_slv_n[2]    ),
+		// FIR-FIFO
+		.out_wave (out_wave          ),
+		.write_en (write_en          )
+	);
+
+	// Slave 3: Memory
+	ahb_mem #(.MEM_BYTE(1024)) u_ahb_mem (
+		.clk      (clk               ),
+		.rst_n    (rst_n             ),
+		.hready   (hready            ),
+		.haddr    (haddr             ),
+		.hwrite   (hwrite            ),
+		.hsize    (hsize             ),
+		.htrans   (htrans            ),
+		.hwdata   (hwdata            ),
+		.hsel     (sel_slv[3]        ),
+		.hrdata   (hrdata_slv_n[3]   ),
+		.hreadyout(hreadyout_slv_n[3]),
+		.hresp    (hresp_slv_n[3]    ),
 		// mem-FIR
 		.fircoefs (fircoefs          )
 	);
