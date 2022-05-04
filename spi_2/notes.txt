@@ -1,0 +1,1 @@
+This SPI implementation adds custom opcodes for burst data transmission.
