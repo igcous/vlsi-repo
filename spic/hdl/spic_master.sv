@@ -1,21 +1,21 @@
 `timescale 1ns / 1ps
 
-import spi_2_pkg::*;
+import spic_pkg::*;
 
-module spi_2_master (
+module spic_master (
 	// Driver-Master
-	input  logic                         clk              ,
-	input  logic                         rst_n            ,
-	input  logic                         master_en        ,
-	input  logic [DWIDTH+AWIDTH+3+2-1:0] driver_data      ,
-	input  logic [                  1:0] driver_cfg       ,
-	output                               driver_read      ,
-	output logic [           DWIDTH-1:0] spi_slv_read_data,
+	input  logic                  clk              ,
+	input  logic                  rst_n            ,
+	input  logic                  master_en        ,
+	input  logic [INSTR_SIZE-1:0] driver_data      ,
+	input  logic [           1:0] driver_cfg       ,
+	output                        driver_read      ,
+	output logic [    DWIDTH-1:0] spi_slv_read_data,
 	// SPI Master-Slave
-	output logic                         sck              ,
-	input  logic                         miso             ,
-	output logic                         mosi             ,
-	output logic [          NSLAVES-1:0] ss_n
+	output logic                  sck              ,
+	input  logic                  miso             ,
+	output logic                  mosi             ,
+	output logic [   NSLAVES-1:0] ss_n
 );
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -28,26 +28,27 @@ module spi_2_master (
 	// Driver-Master
 	////////////////////////////////////////////////////////////////////////
 
-	logic [1:0] mode;
-	logic       cpol, cpha;
-
 	logic [       1:0] ss_addr;
 	logic [       1:0] t_type ;
 	logic [       1:0] size   ;
 	logic [AWIDTH-1:0] addr   ;
 	logic [DWIDTH-1:0] data   ;
 
+	logic [1:0] mode;
+	logic       cpol, cpha;
+
 	////////////////////////////////////////////////////////////////////////
 	// Master-Slave
 	////////////////////////////////////////////////////////////////////////
 
 	// State machine
-	typedef enum {RESET, LOAD,TX_CTRL, TX_DATA, RX, TX_BURST, RX_BURST} state_type;
+	typedef enum {RESET, LOAD,TX_CTRL, TX_SD, RX_SD, TX_BURST, RX_BURST} state_type;
 	state_type current_state, next_state;
 
 	// State machine flags
-	logic reset_flag, load_flag, tx_ctrl_flag, tx_data_flag, rx_flag; // current state indicator
-	logic tx_burst_flag, rx_burst_flag; 
+	logic reset_flag, load_flag, tx_ctrl_flag; // current state indicator
+	logic tx_sd_flag, rx_sd_flag; // sd for Single Data
+	logic tx_burst_flag, rx_burst_flag;
 
 	// sck generation
 	parameter                       MAX_CLK_CNT  = 4;
@@ -56,14 +57,18 @@ module spi_2_master (
 	logic                           slow_clk, slow_clk_1;
 
 	// TX and RX shift registers
-	logic [DWIDTH+AWIDTH+3-1:0] tx_shift_reg;
-	logic [         DWIDTH-1:0] rx_shift_reg;
+	logic [S_DATA_SIZE-1:0] tx_shift_reg;
+	logic [     DWIDTH-1:0] rx_shift_reg;
 
 	// TX and RX counters
-	parameter   TX_CTRL_NBITS = AWIDTH+3;
+	parameter   TX_CTRL_NBITS = AWIDTH+4;
 	logic [5:0] data_size               ;
-	logic [5:0] tx_ctrl_cnt, tx_data_cnt, rx_cnt;
-	logic       tx_ctrl_done, tx_data_done, rx_done;
+	logic [5:0] tx_ctrl_cnt             ;
+	logic [5:0] tx_sd_cnt, rx_sd_cnt;
+	logic [5:0] tx_burst_cnt, rx_burst_cnt;
+	logic       tx_ctrl_done            ;
+	logic       tx_sd_done, rx_sd_done;
+	logic       tx_burst_done, rx_burst_done;
 
 	// Output
 	logic out_enable;
@@ -90,9 +95,8 @@ module spi_2_master (
 	assign cpol = mode[1];
 
 	// Note: INSTRUCTION FORMAT
-	// [T_TYPE (2b) | SIZE (2b) | T_TYPE (2b) | ADDR (32b) | DATA (32b)]
-	// - Data is completed via instruction with zeros if its size is less than 32b
-	// - The first bit sent is WRITE (MSB)
+	// [WRITE (1b) | SIZE (2b) | ADDR (12b) | DATA (8b,16b,32b) | ZEROS - if necessary - (24b,16b,0b) ]
+	// The first bit sent is WRITE (MSB)
 
 	assign driver_read       = load_flag;
 	assign spi_slv_read_data = rx_shift_reg;
@@ -125,14 +129,14 @@ module spi_2_master (
 
 	// Next state assignment
 	always_comb begin
-		reset_flag   = 1'b0;
-		load_flag    = 1'b0;
-		tx_ctrl_flag = 1'b0;
-		tx_data_flag = 1'b0;
-		rx_flag      = 1'b0;
+		reset_flag    = 1'b0;
+		load_flag     = 1'b0;
+		tx_ctrl_flag  = 1'b0;
+		tx_sd_flag    = 1'b0;
+		rx_sd_flag    = 1'b0;
 		tx_burst_flag = 1'b0;
 		rx_burst_flag = 1'b0;
-		next_state   = current_state;
+		next_state    = current_state;
 		case (current_state)
 			RESET : begin
 				reset_flag = 1'b1;
@@ -146,32 +150,30 @@ module spi_2_master (
 				tx_ctrl_flag = 1'b1;
 				if (tx_ctrl_done) begin
 					case (t_type)
-						2'b00: next_state = TX_DATA;
-						2'b01: next_state = RX;
-						2'b10: next_state = TX_BURST;
-						2'b11: next_state = RX_BURST;
+						2'b00 : next_state = RX_SD;
+						2'b01 : next_state = TX_SD;
+						2'b10 : next_state = RX_BURST;
+						2'b11 : next_state = TX_BURST;
 					endcase // t_type
 				end
 			end
-			TX_DATA : begin
-				tx_data_flag = 1'b1;
-				if (tx_data_done) begin
+			TX_SD : begin
+				tx_sd_flag = 1'b1;
+				if (tx_sd_done) begin
 					next_state = LOAD;
 				end
 			end
-			RX : begin
-				rx_flag = 1'b1;
-				if (rx_done) begin
+			RX_SD : begin
+				rx_sd_flag = 1'b1;
+				if (rx_sd_done) begin
 					next_state = LOAD;
 				end
 			end
 			TX_BURST : begin
 				tx_burst_flag = 1'b1;
-				// Never leaves this state unless reset by driver
 			end
 			RX_BURST : begin
 				rx_burst_flag = 1'b1;
-				// Never leaves this state unless reset by driver
 			end
 		endcase
 	end
@@ -181,9 +183,11 @@ module spi_2_master (
 	assign s_pl = ((slow_clk)&&(~slow_clk_1)); // rising edge
 
 	// Max counter flags
-	assign tx_ctrl_done = (tx_ctrl_cnt==TX_CTRL_NBITS);
-	assign tx_data_done = (tx_data_cnt==data_size);
-	assign rx_done      = (rx_cnt==data_size);
+	assign tx_ctrl_done  = (tx_ctrl_cnt==TX_CTRL_NBITS);
+	assign tx_sd_done    = (tx_sd_cnt==data_size);
+	assign rx_sd_done    = (rx_sd_cnt==data_size);
+	assign tx_burst_done = (tx_burst_cnt==data_size);
+	assign rx_burst_done = (rx_burst_cnt==data_size);
 
 	// sck generation
 	always_ff @(posedge clk) begin
@@ -218,14 +222,14 @@ module spi_2_master (
 
 	// Sample RX
 	always_ff @(posedge s_pl) begin
-		if (rx_flag) begin
+		if (rx_sd_flag||rx_burst_flag) begin
 			rx_shift_reg <= {rx_shift_reg[$high(rx_shift_reg)-1:0],miso};
 		end
 	end
 
 	// Change TX
 	always_ff @(posedge c_pl) begin
-		if (tx_ctrl_flag||tx_data_flag)||(tx_burst_flag) begin
+		if (tx_ctrl_flag||tx_sd_flag||tx_burst_flag) begin
 			tx_shift_reg <= (tx_shift_reg<<1);
 		end
 	end
@@ -248,20 +252,38 @@ module spi_2_master (
 	end
 	always_ff @(posedge c_pl or negedge rst_n) begin
 		if (~rst_n) begin
-			tx_data_cnt <= '0;
-		end else if (tx_data_flag) begin
-			tx_data_cnt <= tx_data_cnt + 1'b1;
-		end else if (tx_data_done) begin
-			tx_data_cnt <= '0;
+			tx_sd_cnt <= '0;
+		end else if (tx_sd_flag) begin
+			tx_sd_cnt <= tx_sd_cnt + 1'b1;
+		end else if (tx_sd_done) begin
+			tx_sd_cnt <= '0;
 		end
 	end
 	always_ff @(posedge c_pl or negedge rst_n) begin
 		if (~rst_n) begin
-			rx_cnt <= '0;
-		end else if (rx_flag) begin
-			rx_cnt <= rx_cnt + 1'b1;
-		end else if (rx_done) begin
-			rx_cnt <= '0;
+			rx_sd_cnt <= '0;
+		end else if (rx_sd_flag) begin
+			rx_sd_cnt <= rx_sd_cnt + 1'b1;
+		end else if (rx_sd_done) begin
+			rx_sd_cnt <= '0;
+		end
+	end
+	always_ff @(posedge c_pl or negedge rst_n) begin
+		if (~rst_n) begin
+			tx_burst_cnt <= '0;
+		end else if (tx_burst_flag) begin
+			tx_burst_cnt <= tx_burst_cnt + 1'b1;
+		end else if (tx_burst_done) begin
+			tx_burst_cnt <= '0;
+		end
+	end
+	always_ff @(posedge c_pl or negedge rst_n) begin
+		if (~rst_n) begin
+			rx_burst_cnt <= '0;
+		end else if (rx_burst_flag) begin
+			rx_burst_cnt <= rx_burst_cnt + 1'b1;
+		end else if (rx_burst_done) begin
+			rx_burst_cnt <= '0;
 		end
 	end
 
@@ -269,8 +291,8 @@ module spi_2_master (
 	// SPI outputs
 	////////////////////////////////////////////////////////////////////////
 
-	assign out_enable = (tx_ctrl_flag||tx_data_flag)||(tx_burst_flag);
+	assign out_enable = (tx_ctrl_flag||tx_sd_flag||tx_burst_flag);
 	assign mosi       = out_enable ? tx_shift_reg[$high(tx_shift_reg)] : 'z;
 	assign sck        = slow_clk;
 
-endmodule // spi_2_master
+endmodule // spic_master

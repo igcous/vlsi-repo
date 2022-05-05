@@ -1,8 +1,8 @@
 `timescale 1ns / 1ps
 
-import spi_2_pkg::*;
+import spic_pkg::*;
 
-module spi_2_slave (
+module spic_slave (
 	input  logic [1:0] driver_cfg, // not SPI, for mode config testing
 	input  logic       sck       ,
 	input  logic       mosi      ,
@@ -28,38 +28,40 @@ module spi_2_slave (
 	////////////////////////////////////////////////////////////////////////
 
 	// ASM
-	typedef enum {RX_CTRL, RX_DATA, TX} state_type;
+	typedef enum {RX_CTRL, RX_SD, TX_SD, RX_BURST, TX_BURST} state_type;
 	state_type current_state, next_state;
 
 	// ASM Flags
-	logic rx_ctrl_flag, rx_data_flag, tx_flag; // current state indicator
+	logic rx_ctrl_flag ; // current state indicator
+	logic rx_sd_flag, tx_sd_flag;
+	logic rx_burst_flag, tx_burst_flag;
 
 	// RX and TX shift register
-	logic [DWIDTH+AWIDTH+3-1:0] rx_shift_reg;
-	logic [         DWIDTH-1:0] tx_shift_reg;
+	logic [S_DATA_SIZE-1:0] rx_shift_reg;
+	logic [     DWIDTH-1:0] tx_shift_reg;
 
 	// TX, RX amount of bits
-	parameter   RX_CTRL_NBITS = AWIDTH+3;
+	parameter   RX_CTRL_NBITS = AWIDTH+4;
 	logic [5:0] rx_ctrl_cnt             ;
-	logic       rx_ctrl_done            ;
+	logic [5:0] rx_sd_cnt, tx_sd_cnt;
+	logic [5:0] rx_burst_cnt, tx_burst_cnt;
 
-	logic [5:0] rx_data_cnt ;
-	logic       rx_data_done;
-
-	logic [5:0] tx_cnt ;
-	logic       tx_done;
+	logic rx_ctrl_done ;
+	logic rx_sd_done, tx_sd_done;
+	logic rx_burst_done, tx_burst_done;
 
 	logic [5:0] data_size;
 
 	// Transfer
 	logic [       1:0] size  ;
-	logic [AWIDTH-1:0]  addr;
-	logic              write ;
+	logic [       1:0] t_type;
+	logic [AWIDTH-1:0] addr  ;
+
 
 	// Control variables registers (opcode)
-	logic [1:0] size_1 ;
-	logic       write_1;
-	logic [AWIDTH-1:0] addr_1;
+	logic [       1:0] size_1  ;
+	logic [       1:0] t_type_1;
+	logic [AWIDTH-1:0] addr_1  ;
 
 	// Output
 	logic out_enable;
@@ -89,36 +91,47 @@ module spi_2_slave (
 	// Master-Slave
 	////////////////////////////////////////////////////////////////////////
 
-	assign rx_ctrl_done = (rx_ctrl_cnt==RX_CTRL_NBITS);
-	assign rx_data_done = (rx_ctrl_flag) ? 1'b0 : (rx_data_cnt==data_size-1); // data_size not assigned/known during rx_ctrl phase, set to 0
-	assign tx_done      = (rx_ctrl_flag) ? 1'b0 : (tx_cnt==data_size-1);  	// data_size not assigned/known during rx_ctrl phase, set to 0
+	assign rx_ctrl_done  = (rx_ctrl_cnt==RX_CTRL_NBITS);
+	assign rx_sd_done    = (rx_ctrl_flag) ? 1'b0 : (rx_sd_cnt==data_size-1); // data_size not assigned/known during rx_ctrl phase, set to 0
+	assign tx_sd_done    = (rx_ctrl_flag) ? 1'b0 : (tx_sd_cnt==data_size-1);
+	assign rx_burst_done = (rx_ctrl_flag) ? 1'b0 : (rx_burst_cnt==data_size-1);
+	assign tx_burst_done = (rx_ctrl_flag) ? 1'b0 : (tx_burst_cnt==data_size-1);
 
-	assign addr = rx_shift_reg[0+:AWIDTH];
-	assign write = rx_shift_reg[AWIDTH+2];
-	assign size  = rx_shift_reg[AWIDTH+1:AWIDTH];
+	assign t_type = rx_shift_reg[AWIDTH+2+:2];
+	assign size   = rx_shift_reg[AWIDTH+:2];
+	assign addr   = rx_shift_reg[0+:AWIDTH];
 
 	// Next state assignment
 	always_comb begin
-		rx_ctrl_flag = 1'b0;
-		rx_data_flag = 1'b0;
-		tx_flag      = 1'b0;
-		next_state   = current_state;
+		rx_ctrl_flag  = 1'b0;
+		rx_sd_flag    = 1'b0;
+		tx_sd_flag    = 1'b0;
+		rx_burst_flag = 1'b0;
+		tx_burst_flag = 1'b0;
+		next_state    = current_state;
 		case (current_state)
 			RX_CTRL : begin
 				rx_ctrl_flag = 1'b1;
 				if (rx_ctrl_done) begin
-					if (write) begin
-						next_state = RX_DATA;
-					end else begin
-						next_state = TX;
-					end
+					case (t_type)
+						2'b00 : next_state = TX_SD;
+						2'b01 : next_state = RX_SD;
+						2'b10 : next_state = TX_BURST;
+						2'b11 : next_state = RX_BURST;
+					endcase
 				end
 			end
-			RX_DATA : begin
-				rx_data_flag = 1'b1;
+			RX_SD : begin
+				rx_sd_flag = 1'b1;
 			end
-			TX : begin
-				tx_flag = 1'b1;
+			TX_SD : begin
+				tx_sd_flag = 1'b1;
+			end
+			RX_BURST : begin
+				rx_burst_flag = 1'b1;
+			end
+			TX_BURST : begin
+				tx_burst_flag = 1'b1;
 			end
 		endcase // state
 	end
@@ -144,9 +157,9 @@ module spi_2_slave (
 	// Save control variables
 	always_ff @(posedge sck) begin
 		if (rx_ctrl_done) begin
-			write_1 <= write;
-			addr_1 <= addr;
-			size_1 <= size;
+			t_type_1 <= t_type;
+			addr_1   <= addr;
+			size_1   <= size;
 		end
 	end
 
@@ -160,27 +173,45 @@ module spi_2_slave (
 	end
 	always_ff @(posedge ss_n or posedge sck) begin
 		if (ss_n) begin
-			rx_data_cnt <= '0;
-		end else if (rx_data_flag) begin
-			rx_data_cnt <= rx_data_cnt + 1'b1;
-		end else if (rx_data_done) begin
-			rx_data_cnt <= '0;
+			rx_sd_cnt <= '0;
+		end else if (rx_sd_flag) begin
+			rx_sd_cnt <= rx_sd_cnt + 1'b1;
+		end else if (rx_sd_done) begin
+			rx_sd_cnt <= '0;
 		end
 	end
 	always_ff @(posedge ss_n or posedge sck) begin
 		if (ss_n) begin
-			tx_cnt <= '0;
-		end else if (tx_flag) begin
-			tx_cnt <= tx_cnt + 1'b1;
-		end else if (tx_done) begin
-			tx_cnt <= '0;
+			tx_sd_cnt <= '0;
+		end else if (tx_sd_flag) begin
+			tx_sd_cnt <= tx_sd_cnt + 1'b1;
+		end else if (tx_sd_done) begin
+			tx_sd_cnt <= '0;
+		end
+	end
+	always_ff @(posedge ss_n or posedge sck) begin
+		if (ss_n) begin
+			rx_burst_cnt <= '0;
+		end else if (rx_burst_flag) begin
+			rx_burst_cnt <= rx_burst_cnt + 1'b1;
+		end else if (rx_burst_done) begin
+			rx_burst_cnt <= '0;
+		end
+	end
+	always_ff @(posedge ss_n or posedge sck) begin
+		if (ss_n) begin
+			tx_burst_cnt <= '0;
+		end else if (tx_burst_flag) begin
+			tx_burst_cnt <= tx_burst_cnt + 1'b1;
+		end else if (tx_burst_done) begin
+			tx_burst_cnt <= '0;
 		end
 	end
 
 	// Sample RX
 	always_ff @(posedge sck) begin
-		if (rx_ctrl_flag||rx_data_flag) begin
-			if ((~rx_ctrl_done)||(rx_ctrl_done&&write)) begin // remove additional sample
+		if (rx_ctrl_flag||rx_sd_flag||rx_burst_flag) begin
+			if ((~rx_ctrl_done)||(rx_ctrl_done&&t_type[0])) begin // remove additional sample
 				rx_shift_reg <= {rx_shift_reg[$high(rx_shift_reg)-1:0],mosi};
 			end
 		end
@@ -188,7 +219,7 @@ module spi_2_slave (
 
 	// Change TX
 	always_ff @(negedge sck) begin
-		if (tx_flag&&(~tx_done)) begin
+		if ((tx_sd_flag&&(~tx_sd_done))||tx_burst_flag) begin
 			tx_shift_reg <= (tx_shift_reg<<1);
 		end
 	end
@@ -199,7 +230,7 @@ module spi_2_slave (
 
 	// Write memory, use change flank
 	always_ff @(negedge sck) begin
-		if (rx_data_flag && rx_data_done) begin
+		if ((rx_sd_flag && rx_sd_done)||(rx_burst_flag && rx_burst_done)) begin
 			case (size_1)
 				0 : mem[addr_1[$high(addr_1):2]][8*addr_1[1:0]+:8] <= rx_shift_reg[0+:8];
 				1 : mem[addr_1[$high(addr_1):2]][16*addr_1[1]+:16] <= rx_shift_reg[0+:16];
@@ -210,7 +241,7 @@ module spi_2_slave (
 
 	// Load from memory (note: combinational)
 	always_comb begin
-		if ((rx_ctrl_flag && rx_ctrl_done)&&(~write)) begin
+		if ((rx_ctrl_flag && rx_ctrl_done)&&(~t_type[0])) begin
 			case (size_1)
 				0 : tx_shift_reg[$high(tx_shift_reg)-:8] <= mem[addr[$high(addr):2]][8*addr[1:0]+:8];
 				1 : tx_shift_reg[$high(tx_shift_reg)-:16] <= mem[addr[$high(addr):2]][16*addr[1]+:16];
@@ -223,8 +254,8 @@ module spi_2_slave (
 	// SPI output
 	////////////////////////////////////////////////////////////////////////
 
-	assign out_enable = (((~write)&&rx_ctrl_done)||tx_flag); // need to enable miso only for read transfer (~write) when rx_ctrl_done
+	assign out_enable = (((~t_type[0])&&rx_ctrl_done)||(tx_sd_flag||tx_burst_flag)); // need to enable miso only for read transfer (~write) when rx_ctrl_done
 	assign miso       = out_enable ? tx_shift_reg[$high(tx_shift_reg)] : 'z;
 
 
-endmodule : spi_2_slave
+endmodule : spic_slave

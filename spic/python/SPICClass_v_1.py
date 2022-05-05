@@ -2,7 +2,7 @@ import random
 
 class SPIClass(object):
 	def __init__(self,
-		outfile = 'C:/Users/AK124602/Documents/vlsi-repo/spi_2/python/in_instr.mem'
+		outfile = 'C:/Users/AK124602/Documents/vlsi-repo/spic/python/in_instr.mem'
 		):
 		self.outfile = outfile
 
@@ -67,10 +67,8 @@ def main():
 
 	with open(spi_1.outfile, 'w') as outfile:
 		slave_select = 0
-		transfer_type = 0
 		spi_1.burst_write(outfile, 0, 2, 'word', slave_select, 'single write')
 		spi_1.burst_read(outfile, 0, 2, 'word', slave_select, 'single read')
-		transfer_type = 3
 		spi_1.burst_write(outfile, 0, 16, 'word', slave_select, 'burst write')
 
 if __name__ == '__main__':

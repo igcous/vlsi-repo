@@ -1,0 +1,2 @@
+This SPI implementation adds custom opcodes for burst data transmission.
+SPIC stands for SPI Custom.
