@@ -67,9 +67,9 @@ def main():
 
 	with open(spi_1.outfile, 'w') as outfile:
 		slave_select = 0
-		spi_1.burst_write(outfile, 0, 2, 'word', slave_select, 'single write')
-		spi_1.burst_read(outfile, 0, 2, 'word', slave_select, 'single read')
-		spi_1.burst_write(outfile, 0, 16, 'word', slave_select, 'burst write')
+		#spi_1.burst_write(outfile, 0, 2, 'word', slave_select, 'single write')
+		#spi_1.burst_read(outfile, 0, 2, 'word', slave_select, 'single read')
+		spi_1.burst_write(outfile, 2, 4, 'byte', slave_select, 'burst write')
 
 if __name__ == '__main__':
 	main()

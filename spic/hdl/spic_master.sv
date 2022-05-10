@@ -98,7 +98,7 @@ module spic_master (
 	// [WRITE (1b) | SIZE (2b) | ADDR (12b) | DATA (8b,16b,32b) | ZEROS - if necessary - (24b,16b,0b) ]
 	// The first bit sent is WRITE (MSB)
 
-	assign driver_read       = load_flag;
+	assign driver_read       = load_flag||tx_burst_done;
 	assign spi_slv_read_data = rx_shift_reg;
 
 	// Deco, slave select from instruction
@@ -171,6 +171,7 @@ module spic_master (
 			end
 			TX_BURST : begin
 				tx_burst_flag = 1'b1;
+				// Never leaves this state unless reset by driver
 			end
 			RX_BURST : begin
 				rx_burst_flag = 1'b1;
@@ -186,8 +187,8 @@ module spic_master (
 	assign tx_ctrl_done  = (tx_ctrl_cnt==TX_CTRL_NBITS);
 	assign tx_sd_done    = (tx_sd_cnt==data_size);
 	assign rx_sd_done    = (rx_sd_cnt==data_size);
-	assign tx_burst_done = (tx_burst_cnt==data_size);
-	assign rx_burst_done = (rx_burst_cnt==data_size);
+	assign tx_burst_done = tx_burst_flag ? (tx_burst_cnt==data_size) : '0;
+	assign rx_burst_done = rx_burst_flag ? (rx_burst_cnt==data_size) : '0;
 
 	// sck generation
 	always_ff @(posedge clk) begin
@@ -215,7 +216,7 @@ module spic_master (
 
 	// Load shift register
 	always_ff @(posedge clk) begin
-		if (load_flag) begin
+		if (load_flag||tx_burst_done) begin
 			tx_shift_reg <= driver_data[$high(driver_data)-2:0];
 		end
 	end
